@@ -6,6 +6,7 @@ import language.higherKinds
 import language.postfixOps
 import scala.concurrent.Await
 import scala.io._
+import scala.util.{Failure, Success}
 /**
   * Project: test
   * Package: test.lemonxah
@@ -28,14 +29,43 @@ object main {
   def main(args: Array[String]): Unit = {
     if (args.length == 0) println("usage: test <filename> [output filename]")
     else {
+      // getting the outputFilename if it was specified in the arguments
       val outputFilename = if (args.length == 2) args(1) else "Output.csv"
+
+      // creating the main task which would consist of reading aggregating and writing the output
+      // note that we are not executing any of the code yet we are only expressing what we would
+      // like to happen when we execute the task later on.
       val task = for {
         input ← readFile(args(0))
         output ← aggregate(input)
         written ← writeOutput(outputFilename)(output)
       } yield println(s"writing file $outputFilename ${if (written) "succeeded" else "failed"}.")
 
+      // Testing the Task trampolining
+      // Building up a Task that consists of 1 million operations that need to occur to test trampolining.
+      // 1 million is obviously far above the stack overflow limit and to prove this we will try and print
+      // the task before we run it.
+      val t: Task[Int] = Stream.from(1).take(1000000).foldLeft(Task.now(0)){ case (b, a) ⇒ b.bind(i ⇒ Task.eval(i + 1)) }
+      // try to print this task before running it
+      try {
+        println(t)
+      } catch {
+        // Specifically catching StackOverflowError as this is not an exception but a fatal error
+        case ex: StackOverflowError ⇒
+          println(s"error occurred: $ex")
+      }
+      // running the large data structure that will result in 1 million +1 operations
+      val f = t.runAsync
+      f onComplete {
+        case Success(i) ⇒ println(s"trampolining sum is $i")
+        case Failure(ex) ⇒ println(s"stack overflow? $ex")
+      }
+      // Just adding the await here so that the application does not close while other threads are busy as runAsync is non blocking and async
+      Await.result(f, 2 seconds)
+
+      // we have delayed the execution of our main task and we are going to execute the business logic now.
       val future = task.runAsync
+      // Just adding the await here so that the application does not close while other threads are busy as runAsync is non blocking and async
       Await.result(future, 15 seconds)
     }
   }

@@ -20,3 +20,5 @@ project/plugins/project/
 .DS_Store
 .ensime
 .ensime_cache
+
+Output.csv
